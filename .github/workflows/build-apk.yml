@@ -1,0 +1,59 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      # Sinh thu muc android/ (khong dung tay -> gitignore). Khong dung lib/ & pubspec.
+      - name: Generate android platform files
+        run: flutter create --platforms=android --org com.giavang --project-name gia_vang_usd .
+
+      # Quyen INTERNET (release build mac dinh thieu) + cho phep http:// (DOJI/BTMC).
+      - name: Patch AndroidManifest
+        run: |
+          M=android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' "$M" || \
+            sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' "$M"
+          grep -q 'usesCleartextTraffic' "$M" || \
+            sed -i 's#<application#<application\n        android:usesCleartextTraffic="true"#' "$M"
+          echo "===== AndroidManifest.xml ====="
+          cat "$M"
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Rename APK
+        run: cp build/app/outputs/flutter-apk/app-release.apk gia-vang-usd.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gia-vang-usd-apk
+          path: gia-vang-usd.apk
+          if-no-files-found: error
