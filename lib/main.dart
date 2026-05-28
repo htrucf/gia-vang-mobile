@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 
+import 'history_api.dart';
 import 'models.dart';
 import 'store.dart';
 
@@ -74,6 +75,10 @@ class _HomePageState extends State<HomePage> {
   bool _refreshing = false;
   String? _error;
 
+  ChartRange _range = ChartRange.month;
+  final Map<ChartRange, ChartData> _chartCache = {};
+  bool _chartLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -106,6 +111,28 @@ class _HomePageState extends State<HomePage> {
     } finally {
       if (mounted) setState(() => _refreshing = false);
     }
+    await _loadCharts(force: true);
+  }
+
+  Future<void> _loadCharts({bool force = false}) async {
+    if (!force && _chartCache.containsKey(_range)) {
+      if (mounted) setState(() {});
+      return;
+    }
+    setState(() => _chartLoading = true);
+    try {
+      _chartCache[_range] = await fetchChartData(_range);
+    } catch (_) {
+      // bieu do loi khong chan phan gia hien tai
+    } finally {
+      if (mounted) setState(() => _chartLoading = false);
+    }
+  }
+
+  void _selectRange(ChartRange r) {
+    if (r == _range) return;
+    setState(() => _range = r);
+    _loadCharts();
   }
 
   @override
@@ -151,14 +178,25 @@ class _HomePageState extends State<HomePage> {
                       _GoldCard(g),
                       const SizedBox(height: 12),
                     ],
+                    _RangeSelector(range: _range, onChanged: _selectRange),
+                    const SizedBox(height: 12),
                     _ChartCard(
                       title: 'Vàng theo thời gian (triệu đ/lượng)',
-                      child: _GoldChart(_store.recent()),
+                      child: _chartLoading && !_chartCache.containsKey(_range)
+                          ? const _ChartLoading()
+                          : _GoldChart(
+                              _chartCache[_range]?.gold ?? const {},
+                              note: _range == ChartRange.year
+                                  ? 'Vàng: nguồn miễn phí chỉ có 30 ngày gần nhất'
+                                  : null,
+                            ),
                     ),
                     const SizedBox(height: 12),
                     _ChartCard(
                       title: 'USD/VND theo thời gian',
-                      child: _UsdChart(_store.recent()),
+                      child: _chartLoading && !_chartCache.containsKey(_range)
+                          ? const _ChartLoading()
+                          : _UsdChart(_chartCache[_range]?.usd ?? const []),
                     ),
                   ],
                 ],
@@ -414,7 +452,7 @@ class _ChartCard extends StatelessWidget {
   }
 }
 
-({double min, double max}) _range(Iterable<double> ys) {
+({double min, double max}) _yRange(Iterable<double> ys) {
   if (ys.isEmpty) return (min: 0.0, max: 1.0);
   var lo = ys.first, hi = ys.first;
   for (final y in ys) {
@@ -467,43 +505,116 @@ class _EmptyChart extends StatelessWidget {
   const _EmptyChart();
   @override
   Widget build(BuildContext context) => const Center(
-        child: Text('Chưa đủ dữ liệu để vẽ\n(cần ≥2 lần cập nhật)',
+        child: Text('Chưa có dữ liệu cho khoảng này',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey, fontSize: 12)),
       );
 }
 
-class _GoldChart extends StatelessWidget {
-  final List<HistoryPoint> points;
-  const _GoldChart(this.points);
+class _ChartLoading extends StatelessWidget {
+  const _ChartLoading();
+  @override
+  Widget build(BuildContext context) =>
+      const Center(child: CircularProgressIndicator(strokeWidth: 2));
+}
+
+class _RangeSelector extends StatelessWidget {
+  final ChartRange range;
+  final ValueChanged<ChartRange> onChanged;
+  const _RangeSelector({required this.range, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
-    if (points.length < 2) return const _EmptyChart();
+    final items = ChartRange.values;
+    return Row(
+      children: [
+        for (var i = 0; i < items.length; i++) ...[
+          Expanded(child: _chip(items[i])),
+          if (i != items.length - 1) const SizedBox(width: 8),
+        ],
+      ],
+    );
+  }
+
+  Widget _chip(ChartRange r) {
+    final sel = r == range;
+    return GestureDetector(
+      onTap: () => onChanged(r),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: sel ? const Color(0xFF1F6FEB) : kPanel,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+              color: sel ? const Color(0xFF1F6FEB) : const Color(0xFF21262D)),
+        ),
+        child: Text(r.label,
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: sel ? Colors.white : Colors.grey)),
+      ),
+    );
+  }
+}
+
+String _dm(DateTime t) =>
+    '${t.day.toString().padLeft(2, '0')}/${t.month.toString().padLeft(2, '0')}';
+
+class _ChartFooter extends StatelessWidget {
+  final DateTime? minT;
+  final DateTime? maxT;
+  const _ChartFooter({this.minT, this.maxT});
+
+  @override
+  Widget build(BuildContext context) {
+    if (minT == null || maxT == null) return const SizedBox.shrink();
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Text('${_dm(minT!)} → ${_dm(maxT!)}',
+          style: const TextStyle(fontSize: 10, color: Colors.grey)),
+    );
+  }
+}
+
+class _GoldChart extends StatelessWidget {
+  final Map<String, List<SeriesPoint>> gold;
+  final String? note;
+  const _GoldChart(this.gold, {this.note});
+
+  @override
+  Widget build(BuildContext context) {
     final bars = <LineChartBarData>[];
     final allY = <double>[];
+    double? minX, maxX;
+    DateTime? minT, maxT;
     kSourceColors.forEach((source, color) {
+      final series = gold[source] ?? const [];
+      if (series.length < 2) return;
       final spots = <FlSpot>[];
-      for (var i = 0; i < points.length; i++) {
-        final v = points[i].gold[source];
-        if (v != null) {
-          final m = v / 1e6;
-          spots.add(FlSpot(i.toDouble(), m));
-          allY.add(m);
-        }
+      for (final p in series) {
+        final x = p.t.millisecondsSinceEpoch.toDouble();
+        final y = p.v / 1e6;
+        spots.add(FlSpot(x, y));
+        allY.add(y);
+        if (minX == null || x < minX!) minX = x;
+        if (maxX == null || x > maxX!) maxX = x;
+        if (minT == null || p.t.isBefore(minT!)) minT = p.t;
+        if (maxT == null || p.t.isAfter(maxT!)) maxT = p.t;
       }
-      if (spots.length >= 2) bars.add(_bar(spots, color));
+      bars.add(_bar(spots, color));
     });
     if (bars.isEmpty) return const _EmptyChart();
-    final r = _range(allY);
+    final r = _yRange(allY);
     return Column(
       children: [
         Expanded(
           child: LineChart(LineChartData(
             minY: r.min,
             maxY: r.max,
-            minX: 0,
-            maxX: (points.length - 1).toDouble(),
+            minX: minX,
+            maxX: maxX,
             lineBarsData: bars,
             titlesData: _titles((v) => v.toStringAsFixed(1)),
             gridData: _grid,
@@ -511,13 +622,21 @@ class _GoldChart extends StatelessWidget {
             lineTouchData: LineTouchData(enabled: false),
           )),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
+        _ChartFooter(minT: minT, maxT: maxT),
+        const SizedBox(height: 6),
         Wrap(
           spacing: 14,
           children: [
             for (final e in kSourceColors.entries) _legendDot(e.key, e.value),
           ],
         ),
+        if (note != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(note!,
+                style: const TextStyle(fontSize: 11, color: Color(0xFFD29922))),
+          ),
       ],
     );
   }
@@ -537,32 +656,37 @@ class _GoldChart extends StatelessWidget {
 }
 
 class _UsdChart extends StatelessWidget {
-  final List<HistoryPoint> points;
+  final List<SeriesPoint> points;
   const _UsdChart(this.points);
 
   @override
   Widget build(BuildContext context) {
+    if (points.length < 2) return const _EmptyChart();
     final spots = <FlSpot>[];
     final allY = <double>[];
-    for (var i = 0; i < points.length; i++) {
-      final v = points[i].usd;
-      if (v != null) {
-        spots.add(FlSpot(i.toDouble(), v));
-        allY.add(v);
-      }
+    for (final p in points) {
+      spots.add(FlSpot(p.t.millisecondsSinceEpoch.toDouble(), p.v));
+      allY.add(p.v);
     }
-    if (spots.length < 2) return const _EmptyChart();
-    final r = _range(allY);
-    return LineChart(LineChartData(
-      minY: r.min,
-      maxY: r.max,
-      minX: 0,
-      maxX: (points.length - 1).toDouble(),
-      lineBarsData: [_bar(spots, const Color(0xFF58A6FF))],
-      titlesData: _titles((v) => v.toStringAsFixed(0)),
-      gridData: _grid,
-      borderData: FlBorderData(show: false),
-      lineTouchData: LineTouchData(enabled: false),
-    ));
+    final r = _yRange(allY);
+    return Column(
+      children: [
+        Expanded(
+          child: LineChart(LineChartData(
+            minY: r.min,
+            maxY: r.max,
+            minX: points.first.t.millisecondsSinceEpoch.toDouble(),
+            maxX: points.last.t.millisecondsSinceEpoch.toDouble(),
+            lineBarsData: [_bar(spots, const Color(0xFF58A6FF))],
+            titlesData: _titles((v) => v.toStringAsFixed(0)),
+            gridData: _grid,
+            borderData: FlBorderData(show: false),
+            lineTouchData: LineTouchData(enabled: false),
+          )),
+        ),
+        const SizedBox(height: 6),
+        _ChartFooter(minT: points.first.t, maxT: points.last.t),
+      ],
+    );
   }
 }
