@@ -103,6 +103,9 @@ List<BrandQuote> _category(
   final out = <BrandQuote>[];
   for (final b in blocks) {
     if (!b.ok) {
+      // SJC bi Cloudflare chan tren may that; gia mieng SJC da co tu PNJ/DOJI/BTMC
+      // nen bo qua dong loi SJC cho gon. Cac nguon khac van hien loi de chan doan.
+      if (b.source == 'SJC') continue;
       out.add(BrandQuote(b.source,
           ok: false, msg: b.error?.replaceFirst('Exception: ', '')));
       continue;
