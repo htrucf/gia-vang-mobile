@@ -347,3 +347,45 @@ Future<Snapshot> fetchAll() async {
     c.close();
   }
 }
+
+// ── Gia ban vang mieng SJC (cho thong bao giam) ─────────────────────────────────
+
+double? _pickMiengSjcSell(GoldBlock b) {
+  for (final it in b.items) {
+    final n = it.name.toLowerCase();
+    final isMieng = n.contains('miếng sjc') ||
+        (n.contains('sjc') &&
+            (n.contains('1l') || n.contains('10l') || n.contains('1kg'))) ||
+        (b.source == 'DOJI' && n.contains('hn lẻ'));
+    if (isMieng && it.sell != null) return it.sell;
+  }
+  return null;
+}
+
+/// Trich gia ban vang mieng SJC tu snapshot da co (uu tien PNJ -> DOJI -> BTMC).
+double? sjcMiengSellFrom(List<GoldBlock> gold) {
+  for (final src in const ['PNJ', 'DOJI', 'BTMC']) {
+    for (final b in gold) {
+      if (b.ok && b.source == src) {
+        final v = _pickMiengSjcSell(b);
+        if (v != null) return v;
+      }
+    }
+  }
+  return null;
+}
+
+/// Fetch nhe chi de lay gia ban SJC mieng (cho task chay nen). PNJ ~2KB di truoc.
+Future<double?> fetchSjcMiengSell(http.Client c) async {
+  for (final fn in <Future<GoldBlock> Function(http.Client)>[
+    fetchPnj,
+    fetchDoji,
+    fetchBtmc,
+  ]) {
+    try {
+      final v = _pickMiengSjcSell(await fn(c));
+      if (v != null) return v;
+    } catch (_) {}
+  }
+  return null;
+}

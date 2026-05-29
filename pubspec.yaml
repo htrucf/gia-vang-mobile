@@ -4,7 +4,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.3.0 <4.0.0'
+  sdk: '>=3.5.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -14,6 +14,8 @@ dependencies:
   fl_chart: ^0.68.0
   shared_preferences: ^2.2.2
   intl: ^0.19.0
+  flutter_local_notifications: ^21.0.0
+  workmanager: ^0.9.0
 
 dev_dependencies:
   flutter_lints: ^3.0.0
@@ -29,3 +31,4 @@ flutter_launcher_icons:
   min_sdk_android: 21
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/icon/icon.png"
+  adaptive_icon_foreground_inset: 25  # le an toan: tranh bi mask bo tron cat goc

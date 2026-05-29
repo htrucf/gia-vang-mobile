@@ -39,9 +39,30 @@ jobs:
             sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' "$M"
           grep -q 'usesCleartextTraffic' "$M" || \
             sed -i 's#<application#<application\n        android:usesCleartextTraffic="true"#' "$M"
+          grep -q 'POST_NOTIFICATIONS' "$M" || \
+            sed -i 's#<application#<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <application#' "$M"
           sed -i 's#android:label="[^"]*"#android:label="Gold USD"#' "$M"
           echo "===== AndroidManifest.xml ====="
           cat "$M"
+
+      # flutter_local_notifications can core library desugaring (java.time...).
+      - name: Enable core library desugaring
+        run: |
+          G=android/app/build.gradle.kts
+          if [ -f "$G" ]; then
+            grep -q isCoreLibraryDesugaringEnabled "$G" || \
+              sed -i 's/compileOptions {/compileOptions {\n        isCoreLibraryDesugaringEnabled = true/' "$G"
+            grep -q desugar_jdk_libs "$G" || \
+              printf '\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n' >> "$G"
+          else
+            G=android/app/build.gradle
+            grep -q coreLibraryDesugaringEnabled "$G" || \
+              sed -i 's/compileOptions {/compileOptions {\n        coreLibraryDesugaringEnabled true/' "$G"
+            grep -q desugar_jdk_libs "$G" || \
+              printf "\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'\n}\n" >> "$G"
+          fi
+          echo "===== $G ====="
+          cat "$G"
 
       - name: Get dependencies
         run: flutter pub get

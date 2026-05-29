@@ -5,9 +5,12 @@ import 'package:fl_chart/fl_chart.dart';
 
 import 'history_api.dart';
 import 'models.dart';
+import 'notify.dart';
 import 'store.dart';
 
-const Duration kRefreshEvery = Duration(minutes: 20);
+// Poll gia 30 phut/lan (~33 MB/ngay). Nguon vang chi doi gia vai lan/ngay nen
+// day hon khong loi them ma ton data; bieu do lich su tach rieng (xem _refresh).
+const Duration kRefreshEvery = Duration(minutes: 30);
 
 // Mau cham theo thuong hieu (bang gia hien tai).
 const Map<String, Color> kSourceColors = {
@@ -31,7 +34,12 @@ final RoundedRectangleBorder kCardShape = RoundedRectangleBorder(
   side: const BorderSide(color: Color(0xFF21262D)),
 );
 
-void main() => runApp(const GiaVangApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initNotifications();
+  await registerDropCheck();
+  runApp(const GiaVangApp());
+}
 
 class GiaVangApp extends StatelessWidget {
   const GiaVangApp({super.key});
@@ -142,7 +150,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _boot();
-    _timer = Timer.periodic(kRefreshEvery, (_) => _refresh());
+    _timer = Timer.periodic(kRefreshEvery, (_) => _refresh(withCharts: false));
   }
 
   @override
@@ -157,7 +165,7 @@ class _HomePageState extends State<HomePage> {
     await _refresh();
   }
 
-  Future<void> _refresh() async {
+  Future<void> _refresh({bool withCharts = true}) async {
     if (_refreshing) return;
     setState(() {
       _refreshing = true;
@@ -165,12 +173,23 @@ class _HomePageState extends State<HomePage> {
     });
     try {
       await _store.refresh();
+      await setLastSjcSell(_sjcMiengSell());
     } catch (e) {
       _error = e.toString();
     } finally {
       if (mounted) setState(() => _refreshing = false);
     }
-    await _loadCharts(force: true);
+    // Auto-poll chi lam moi gia; bieu do (lich su theo ngay) keo lai khi
+    // mo app, bam nut refresh, keo-tha, hoac doi khoang thoi gian.
+    if (withCharts) await _loadCharts(force: true);
+  }
+
+  // Gia ban SJC mieng dai dien (PNJ truoc) -> moc cho thong bao giam.
+  double? _sjcMiengSell() {
+    for (final q in _category(_store.latest?.gold ?? const [], _isMiengSjc)) {
+      if (q.ok && q.sell != null) return q.sell;
+    }
+    return null;
   }
 
   Future<void> _loadCharts({bool force = false}) async {

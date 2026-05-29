@@ -77,8 +77,61 @@ int goldMaxDays = 30; // gioi han cua nguon free
 
 int _goldDays(ChartRange r) => r == ChartRange.week ? 7 : goldMaxDays;
 
+// ── Gold SJC: webgia.com (lich su 1 nam, nhung san trong HTML Highcharts) ─────────
+// Trang bieu-do-1-nam nhung series "Bán ra" dang [[ms, gia_trieu], ...] ngay trong
+// HTML. 1 lan tai (~94KB) du cho ca 7/30/365 ngay -> vuot gioi han 30 ngay cua
+// vang.today cho vang mieng SJC.
+List<SeriesPoint>? _webgiaSjc;
+DateTime? _webgiaSjcAt;
+
+Future<List<SeriesPoint>> _fetchWebgiaSjcYear(http.Client c) async {
+  final cached = _webgiaSjc;
+  if (cached != null &&
+      _webgiaSjcAt != null &&
+      DateTime.now().difference(_webgiaSjcAt!).inMinutes < 30) {
+    return cached;
+  }
+  final resp = await c.get(
+    Uri.parse('https://webgia.com/gia-vang/sjc/bieu-do-1-nam.html'),
+    headers: _ua,
+  );
+  if (resp.statusCode != 200) throw Exception('webgia HTTP ${resp.statusCode}');
+  final html = utf8.decode(resp.bodyBytes);
+  final start = html.indexOf('name:"Bán ra"');
+  if (start < 0) throw Exception('webgia: khong thay series Ban ra');
+  final end = html.indexOf(',tooltip', start);
+  final body = end > start ? html.substring(start, end) : html.substring(start);
+  final out = <SeriesPoint>[];
+  for (final m in RegExp(r'\[(\d{10,}),([0-9.]+)\]').allMatches(body)) {
+    final ms = int.tryParse(m.group(1)!);
+    final v = double.tryParse(m.group(2)!);
+    if (ms == null || v == null) continue;
+    // trieu d/luong -> d/luong (khop chart: y = v / 1e6).
+    out.add(SeriesPoint(DateTime.fromMillisecondsSinceEpoch(ms), v * 1e6));
+  }
+  if (out.isEmpty) throw Exception('webgia: khong parse duoc diem nao');
+  out.sort((a, b) => a.t.compareTo(b.t));
+  _webgiaSjc = out;
+  _webgiaSjcAt = DateTime.now();
+  return out;
+}
+
+List<SeriesPoint> _sliceRange(List<SeriesPoint> all, ChartRange r) {
+  if (all.isEmpty) return all;
+  final days = switch (r) {
+    ChartRange.week => 7,
+    ChartRange.month => 30,
+    ChartRange.year => 366,
+  };
+  final from = all.last.t.subtract(Duration(days: days));
+  return all.where((p) => !p.t.isBefore(from)).toList();
+}
+
 Future<List<SeriesPoint>> fetchGoldSeries(
     http.Client c, String typeKey, ChartRange r) async {
+  if (typeKey == 'Vàng miếng SJC') {
+    return _sliceRange(await _fetchWebgiaSjcYear(c), r);
+  }
   final code = kGoldTypeCode[typeKey];
   if (code == null) return const [];
   final url = 'https://www.vang.today/api/prices?type=$code&days=${_goldDays(r)}';
