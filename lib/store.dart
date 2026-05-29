@@ -1,5 +1,5 @@
 // Cache gia trong RAM + luu xuong shared_preferences (latest + history).
-// Tinh % thay doi so voi 1 ngay truoc (~24h). Port tu app/store.py.
+// Tinh % thay doi so voi dau ngay (gio VN). Port tu app/store.py.
 
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,12 +12,6 @@ const String _kLatest = 'latest';
 const String _kHistory = 'history';
 
 double? _representative(GoldBlock b) {
-  // Uu tien gia ban mieng SJC (chi so headline + moc thong bao) -> on dinh.
-  for (final it in b.items) {
-    if (it.sell != null && isMiengSjcName(it.name.toLowerCase(), b.source)) {
-      return it.sell;
-    }
-  }
   for (final it in b.items) {
     if (it.sell != null) return it.sell;
   }
@@ -43,32 +37,17 @@ double? _pct(double? cur, double? base) {
   return double.parse(((cur - base) / base * 100).toStringAsFixed(2));
 }
 
-/// Diem gan moc 24h truoc nhat (tuoi trong [12h, 48h]) -> moc '1 ngay truoc'.
-/// Tra null khi lich su chua du ~1 ngay -> badge hien '—'.
-HistoryPoint? _dayAgoBaseline(List<HistoryPoint> history, String nowIso) {
-  final now = DateTime.tryParse(nowIso);
-  if (now == null) return null;
-  final target = now.subtract(const Duration(hours: 24));
-  HistoryPoint? best;
-  Duration? bestGap;
+/// Diem som nhat trong cung ngay (gio VN) -> moc 'dau ngay'.
+HistoryPoint? _todayBaseline(List<HistoryPoint> history, String nowIso) {
+  final today = nowIso.length >= 10 ? nowIso.substring(0, 10) : nowIso;
   for (final p in history) {
-    final t = DateTime.tryParse(p.t);
-    if (t == null) continue;
-    final age = now.difference(t);
-    if (age < const Duration(hours: 12) || age > const Duration(hours: 48)) {
-      continue;
-    }
-    final gap = (t.difference(target)).abs();
-    if (bestGap == null || gap < bestGap) {
-      bestGap = gap;
-      best = p;
-    }
+    if (p.t.length >= 10 && p.t.substring(0, 10) == today) return p;
   }
-  return best;
+  return null;
 }
 
 void _annotateChanges(Snapshot s, List<HistoryPoint> history, String nowIso) {
-  final base = _dayAgoBaseline(history, nowIso);
+  final base = _todayBaseline(history, nowIso);
   final baseUsd = base?.usd;
   final baseGold = base?.gold ?? const {};
 

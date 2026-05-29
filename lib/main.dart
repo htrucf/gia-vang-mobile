@@ -92,9 +92,7 @@ class BrandQuote {
   final double? sell;
   final bool ok;
   final String? msg; // thong bao loi (khi !ok) de chan doan tren may that
-  final double? changePct; // % thay doi so voi 1 ngay truoc (gia dai dien nguon)
-  const BrandQuote(this.brand,
-      {this.buy, this.sell, this.ok = true, this.msg, this.changePct});
+  const BrandQuote(this.brand, {this.buy, this.sell, this.ok = true, this.msg});
 }
 
 /// Gom 1 san pham (miENG SJC / nhan tron) tu tat ca nguon -> 1 dong moi thuong hieu.
@@ -112,8 +110,7 @@ List<BrandQuote> _category(
     }
     for (final it in b.items) {
       if (match(it.name.toLowerCase(), b.source)) {
-        out.add(BrandQuote(b.source,
-            buy: it.buy, sell: it.sell, changePct: b.changePct));
+        out.add(BrandQuote(b.source, buy: it.buy, sell: it.sell));
         break;
       }
     }
@@ -138,6 +135,12 @@ class _HomePageState extends State<HomePage> {
   ChartRange _range = ChartRange.month;
   final Map<ChartRange, ChartData> _chartCache = {};
   bool _chartLoading = false;
+
+  // % thay doi so voi 1 ngay truoc, lay tu nguon bieu do (webgia/vang.today/
+  // Yahoo) -> co ngay khong can app chay du 1 ngay nhu lich su tu tich luy.
+  double? _sjcDayChange;
+  double? _nhanDayChange;
+  double? _usdDayChange;
 
   @override
   void initState() {
@@ -187,6 +190,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadCharts({bool force = false}) async {
     if (!force && _chartCache.containsKey(_range)) {
+      _recomputeDayChanges();
       if (mounted) setState(() {});
       return;
     }
@@ -196,8 +200,17 @@ class _HomePageState extends State<HomePage> {
     } catch (_) {
       // loi bieu do khong chan gia hien tai
     } finally {
+      _recomputeDayChanges();
       if (mounted) setState(() => _chartLoading = false);
     }
+  }
+
+  // Tinh lai % thay doi 1 ngay tu series bieu do cua khoang dang chon.
+  void _recomputeDayChanges() {
+    final cd = _chartCache[_range];
+    _sjcDayChange = dayChangePct(cd?.gold['Vàng miếng SJC'] ?? const []);
+    _nhanDayChange = dayChangePct(cd?.gold['Nhẫn trơn 9999'] ?? const []);
+    _usdDayChange = dayChangePct(cd?.usd ?? const []);
   }
 
   void _selectRange(ChartRange r) {
@@ -286,13 +299,14 @@ class _HomePageState extends State<HomePage> {
               title: 'Vàng miếng SJC',
               accent: const Color(0xFFF5B301),
               quotes: _category(latest.gold, isMiengSjcName),
-              showChange: true,
+              change: _sjcDayChange,
             ),
             const SizedBox(height: 12),
             _GoldSection(
               title: 'Nhẫn trơn 9999',
               accent: const Color(0xFF58A6FF),
               quotes: _category(latest.gold, _isNhanTron),
+              change: _nhanDayChange,
             ),
           ],
         ],
@@ -315,7 +329,7 @@ class _HomePageState extends State<HomePage> {
           else ...[
             _HeaderLine(latest),
             const SizedBox(height: 8),
-            _UsdCard(latest.usd),
+            _UsdCard(latest.usd, change: _usdDayChange),
             const SizedBox(height: 12),
             _RangeSelector(range: _range, onChanged: _selectRange),
             const SizedBox(height: 12),
@@ -395,7 +409,8 @@ Widget chgBadge(double? pct) {
 
 class _UsdCard extends StatelessWidget {
   final UsdRate usd;
-  const _UsdCard(this.usd);
+  final double? change; // % so voi 1 ngay truoc (tu series Yahoo)
+  const _UsdCard(this.usd, {this.change});
 
   @override
   Widget build(BuildContext context) {
@@ -433,7 +448,7 @@ class _UsdCard extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                chgBadge(usd.changePct),
+                chgBadge(change),
                 const SizedBox(height: 4),
                 const Text('so với 1 ngày trước',
                     style: TextStyle(color: Colors.grey, fontSize: 10)),
@@ -450,12 +465,12 @@ class _GoldSection extends StatelessWidget {
   final String title;
   final Color accent;
   final List<BrandQuote> quotes;
-  final bool showChange; // hien % thay doi so voi 1 ngay truoc duoi gia ban
+  final double? change; // % thay doi so voi 1 ngay truoc (tu nguon bieu do)
   const _GoldSection(
       {required this.title,
       required this.accent,
       required this.quotes,
-      this.showChange = false});
+      this.change});
 
   @override
   Widget build(BuildContext context) {
@@ -480,14 +495,18 @@ class _GoldSection extends StatelessWidget {
                 Text(title,
                     style: const TextStyle(
                         fontWeight: FontWeight.w800, fontSize: 16)),
+                const Spacer(),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    chgBadge(change),
+                    const SizedBox(height: 2),
+                    const Text('so với 1 ngày trước',
+                        style: TextStyle(color: Colors.grey, fontSize: 10)),
+                  ],
+                ),
               ],
             ),
-            if (showChange)
-              const Padding(
-                padding: EdgeInsets.only(top: 3),
-                child: Text('Dưới giá bán: thay đổi so với 1 ngày trước',
-                    style: TextStyle(color: Colors.grey, fontSize: 11)),
-              ),
             const SizedBox(height: 10),
             const _BrandRow(
                 brand: 'Thương hiệu', buy: 'Mua', sell: 'Bán', header: true),
@@ -505,8 +524,6 @@ class _GoldSection extends StatelessWidget {
                   buy: q.ok ? groupVnd(q.buy) : (q.msg ?? 'nguồn lỗi'),
                   sell: q.ok ? groupVnd(q.sell) : '',
                   error: !q.ok,
-                  changePct: q.changePct,
-                  showChange: showChange && q.ok,
                 ),
           ],
         ),
@@ -521,16 +538,12 @@ class _BrandRow extends StatelessWidget {
   final String sell;
   final bool header;
   final bool error;
-  final double? changePct;
-  final bool showChange;
   const _BrandRow({
     required this.brand,
     required this.buy,
     required this.sell,
     this.header = false,
     this.error = false,
-    this.changePct,
-    this.showChange = false,
   });
 
   @override
@@ -577,18 +590,8 @@ class _BrandRow extends StatelessWidget {
                 flex: 3,
                 child: Text(buy, textAlign: TextAlign.right, style: base)),
             Expanded(
-              flex: 3,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(sell, textAlign: TextAlign.right, style: base),
-                  if (showChange) ...[
-                    const SizedBox(height: 3),
-                    chgBadge(changePct),
-                  ],
-                ],
-              ),
-            ),
+                flex: 3,
+                child: Text(sell, textAlign: TextAlign.right, style: base)),
           ],
         ],
       ),

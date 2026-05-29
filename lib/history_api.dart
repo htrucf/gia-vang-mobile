@@ -22,6 +22,23 @@ class SeriesPoint {
   const SeriesPoint(this.t, this.v);
 }
 
+/// % thay doi giua diem moi nhat va diem gan 24h truoc (cung 1 series bieu do).
+/// Lay thang tu nguon (webgia/vang.today/Yahoo) -> co ngay, khong can app chay
+/// du 1 ngay nhu lich su tu tich luy. Series phai sort tang dan theo thoi gian.
+double? dayChangePct(List<SeriesPoint> series) {
+  if (series.length < 2) return null;
+  final last = series.last;
+  final cutoff = last.t.subtract(const Duration(hours: 24));
+  SeriesPoint? base;
+  for (final p in series) {
+    if (p.t.isAfter(cutoff)) break; // da qua moc 24h truoc
+    base = p;
+  }
+  base ??= series.first;
+  if (identical(base, last) || base.v == 0) return null;
+  return double.parse(((last.v - base.v) / base.v * 100).toStringAsFixed(2));
+}
+
 // San pham -> ma type cua vang.today.
 //   SJL1L10  = "SJC 9999"  (vang mieng SJC)
 //   PQHN24NTT= "PNJ 24K"   (nhan tron 9999, dai dien)
