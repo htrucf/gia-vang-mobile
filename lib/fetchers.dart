@@ -352,12 +352,9 @@ Future<Snapshot> fetchAll() async {
 
 double? _pickMiengSjcSell(GoldBlock b) {
   for (final it in b.items) {
-    final n = it.name.toLowerCase();
-    final isMieng = n.contains('miếng sjc') ||
-        (n.contains('sjc') &&
-            (n.contains('1l') || n.contains('10l') || n.contains('1kg'))) ||
-        (b.source == 'DOJI' && n.contains('hn lẻ'));
-    if (isMieng && it.sell != null) return it.sell;
+    if (it.sell != null && isMiengSjcName(it.name.toLowerCase(), b.source)) {
+      return it.sell;
+    }
   }
   return null;
 }

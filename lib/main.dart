@@ -77,16 +77,6 @@ String prettyTime(String iso) {
 
 // ── Loc san pham vang ────────────────────────────────────────────────────────
 
-bool _isMiengSjc(String n, String src) {
-  if (n.contains('miếng sjc')) return true;
-  if (n.contains('sjc') &&
-      (n.contains('1l') || n.contains('10l') || n.contains('1kg'))) {
-    return true;
-  }
-  if (src == 'DOJI' && n.contains('hn lẻ')) return true; // DOJI niem yet mieng SJC
-  return false;
-}
-
 bool _isNhanTron(String n, String src) {
   if (!n.contains('nhẫn')) return false;
   return n.contains('trơn') ||
@@ -102,7 +92,9 @@ class BrandQuote {
   final double? sell;
   final bool ok;
   final String? msg; // thong bao loi (khi !ok) de chan doan tren may that
-  const BrandQuote(this.brand, {this.buy, this.sell, this.ok = true, this.msg});
+  final double? changePct; // % thay doi so voi 1 ngay truoc (gia dai dien nguon)
+  const BrandQuote(this.brand,
+      {this.buy, this.sell, this.ok = true, this.msg, this.changePct});
 }
 
 /// Gom 1 san pham (miENG SJC / nhan tron) tu tat ca nguon -> 1 dong moi thuong hieu.
@@ -120,7 +112,8 @@ List<BrandQuote> _category(
     }
     for (final it in b.items) {
       if (match(it.name.toLowerCase(), b.source)) {
-        out.add(BrandQuote(b.source, buy: it.buy, sell: it.sell));
+        out.add(BrandQuote(b.source,
+            buy: it.buy, sell: it.sell, changePct: b.changePct));
         break;
       }
     }
@@ -186,7 +179,7 @@ class _HomePageState extends State<HomePage> {
 
   // Gia ban SJC mieng dai dien (PNJ truoc) -> moc cho thong bao giam.
   double? _sjcMiengSell() {
-    for (final q in _category(_store.latest?.gold ?? const [], _isMiengSjc)) {
+    for (final q in _category(_store.latest?.gold ?? const [], isMiengSjcName)) {
       if (q.ok && q.sell != null) return q.sell;
     }
     return null;
@@ -292,7 +285,8 @@ class _HomePageState extends State<HomePage> {
             _GoldSection(
               title: 'Vàng miếng SJC',
               accent: const Color(0xFFF5B301),
-              quotes: _category(latest.gold, _isMiengSjc),
+              quotes: _category(latest.gold, isMiengSjcName),
+              showChange: true,
             ),
             const SizedBox(height: 12),
             _GoldSection(
@@ -381,9 +375,10 @@ Widget chgBadge(double? pct) {
   }
   final flat = pct == 0;
   final up = pct > 0;
+  // Quy uoc VN: tang = do, giam = xanh la.
   final color = flat
       ? Colors.grey
-      : (up ? const Color(0xFF3FB950) : const Color(0xFFF85149));
+      : (up ? const Color(0xFFF85149) : const Color(0xFF3FB950));
   final arrow = flat ? '▬' : (up ? '▲' : '▼');
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -435,7 +430,15 @@ class _UsdCard extends StatelessWidget {
                 ],
               ),
             ),
-            chgBadge(usd.changePct),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                chgBadge(usd.changePct),
+                const SizedBox(height: 4),
+                const Text('so với 1 ngày trước',
+                    style: TextStyle(color: Colors.grey, fontSize: 10)),
+              ],
+            ),
           ],
         ),
       ),
@@ -447,8 +450,12 @@ class _GoldSection extends StatelessWidget {
   final String title;
   final Color accent;
   final List<BrandQuote> quotes;
+  final bool showChange; // hien % thay doi so voi 1 ngay truoc duoi gia ban
   const _GoldSection(
-      {required this.title, required this.accent, required this.quotes});
+      {required this.title,
+      required this.accent,
+      required this.quotes,
+      this.showChange = false});
 
   @override
   Widget build(BuildContext context) {
@@ -475,6 +482,12 @@ class _GoldSection extends StatelessWidget {
                         fontWeight: FontWeight.w800, fontSize: 16)),
               ],
             ),
+            if (showChange)
+              const Padding(
+                padding: EdgeInsets.only(top: 3),
+                child: Text('Dưới giá bán: thay đổi so với 1 ngày trước',
+                    style: TextStyle(color: Colors.grey, fontSize: 11)),
+              ),
             const SizedBox(height: 10),
             const _BrandRow(
                 brand: 'Thương hiệu', buy: 'Mua', sell: 'Bán', header: true),
@@ -492,6 +505,8 @@ class _GoldSection extends StatelessWidget {
                   buy: q.ok ? groupVnd(q.buy) : (q.msg ?? 'nguồn lỗi'),
                   sell: q.ok ? groupVnd(q.sell) : '',
                   error: !q.ok,
+                  changePct: q.changePct,
+                  showChange: showChange && q.ok,
                 ),
           ],
         ),
@@ -506,12 +521,16 @@ class _BrandRow extends StatelessWidget {
   final String sell;
   final bool header;
   final bool error;
+  final double? changePct;
+  final bool showChange;
   const _BrandRow({
     required this.brand,
     required this.buy,
     required this.sell,
     this.header = false,
     this.error = false,
+    this.changePct,
+    this.showChange = false,
   });
 
   @override
@@ -558,8 +577,18 @@ class _BrandRow extends StatelessWidget {
                 flex: 3,
                 child: Text(buy, textAlign: TextAlign.right, style: base)),
             Expanded(
-                flex: 3,
-                child: Text(sell, textAlign: TextAlign.right, style: base)),
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(sell, textAlign: TextAlign.right, style: base),
+                  if (showChange) ...[
+                    const SizedBox(height: 3),
+                    chgBadge(changePct),
+                  ],
+                ],
+              ),
+            ),
           ],
         ],
       ),

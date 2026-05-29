@@ -1,5 +1,19 @@
 // Mo hinh du lieu gia vang + USD. Co toJson/fromJson de luu vao shared_preferences.
 
+/// Khop ten san pham vang mieng SJC. `nameLower` la ten da .toLowerCase().
+/// Dung chung cho UI (loc bang), store (gia dai dien) va task chay nen.
+bool isMiengSjcName(String nameLower, String source) {
+  if (nameLower.contains('miếng sjc')) return true;
+  if (nameLower.contains('sjc') &&
+      (nameLower.contains('1l') ||
+          nameLower.contains('10l') ||
+          nameLower.contains('1kg'))) {
+    return true;
+  }
+  if (source == 'DOJI' && nameLower.contains('hn lẻ')) return true;
+  return false;
+}
+
 class GoldItem {
   final String name;
   final String branch;
