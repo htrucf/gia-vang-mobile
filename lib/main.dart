@@ -15,6 +15,7 @@ const Map<String, Color> kSourceColors = {
   'PNJ': Color(0xFF58A6FF),
   'DOJI': Color(0xFFF85149),
   'BTMC': Color(0xFF3FB950),
+  'BTMH': Color(0xFFA371F7),
 };
 
 // Mau 2 duong tren bieu do (khop ten voi kGoldTypeCode).

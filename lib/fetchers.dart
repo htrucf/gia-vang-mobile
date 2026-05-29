@@ -166,6 +166,48 @@ Future<GoldBlock> fetchBtmc(http.Client c) async {
   return GoldBlock(source: 'BTMC', ok: true, updated: updated, items: items);
 }
 
+Future<GoldBlock> fetchBtmh(http.Client c) async {
+  // Bao Tin Manh Hai khong co API JSON: gia render san trong HTML (SSR).
+  // Quet cap span: ten san pham (font-body) roi 2 gia ke tiep [ban ra, mua vao].
+  final r = await c.get(
+    Uri.parse('https://baotinmanhhai.vn/vi/bang-gia-vang'),
+    headers: _baseHeaders,
+  );
+  if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
+  final html = utf8.decode(r.bodyBytes);
+  final token = RegExp(r'<span class="font-body[^"]*">([^<]+)</span>'
+      r'|text-text-dark font-semibold text-sm md:text-lg">([0-9.]+)');
+  final items = <GoldItem>[];
+  String? name;
+  final prices = <double>[];
+  void flush() {
+    final n = name;
+    if (n != null && prices.isNotEmpty && !n.toLowerCase().contains('bạc')) {
+      final sell = _normalizeLuong(prices[0]);
+      final buy = prices.length > 1 ? _normalizeLuong(prices[1]) : null;
+      if (sell != null || buy != null) {
+        items.add(GoldItem(name: n.trim(), branch: '', buy: buy, sell: sell));
+      }
+    }
+    prices.clear();
+  }
+
+  for (final m in token.allMatches(html)) {
+    final nm = m.group(1);
+    final pr = m.group(2);
+    if (nm != null) {
+      flush();
+      name = nm;
+    } else if (pr != null) {
+      final v = double.tryParse(pr.replaceAll('.', ''));
+      if (v != null) prices.add(v);
+    }
+  }
+  flush();
+  if (items.isEmpty) throw Exception('khong parse duoc gia BTMH');
+  return GoldBlock(source: 'BTMH', ok: true, items: items);
+}
+
 // ── USD ────────────────────────────────────────────────────────────────────────
 
 const _googleUsd = 'https://www.google.com/finance/quote/USD-VND';
@@ -246,6 +288,7 @@ Future<Snapshot> fetchAll() async {
       _safe('PNJ', fetchPnj, c),
       _safe('DOJI', fetchDoji, c),
       _safe('BTMC', fetchBtmc, c),
+      _safe('BTMH', fetchBtmh, c),
     ]);
     final usdFut = fetchUsd(c);
     final gold = await goldFut;
