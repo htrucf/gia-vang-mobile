@@ -1,5 +1,6 @@
-// Thong bao chay nen khi gia ban vang mieng SJC giam >= 1% so voi lan truoc.
-// foreground chi cap nhat moc (setLastSjcSell); task chay nen so sanh + bao.
+// Thong bao chay nen khi gia ban vang mieng SJC bien dong >= 1% so voi lan truoc
+// (ca tang lan giam). foreground chi cap nhat moc (setLastSjcSell); task chay nen
+// so sanh + bao.
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
@@ -10,7 +11,7 @@ import 'fetchers.dart';
 
 const String _kTask = 'sjc_drop_check';
 const String _kPrefLastSell = 'notif_last_sjc_sell';
-const double kDropThreshold = 0.01; // bao khi giam >= 1%
+const double kChangeThreshold = 0.01; // bao khi bien dong >= 1% (tang hoac giam)
 
 final FlutterLocalNotificationsPlugin _fln = FlutterLocalNotificationsPlugin();
 bool _flnReady = false;
@@ -54,21 +55,22 @@ String _fmt(double v) {
   return buf.toString();
 }
 
-Future<void> _showDrop(double oldSell, double newSell) async {
+Future<void> _showChange(double oldSell, double newSell) async {
   await _ensureFln();
-  final pct = (oldSell - newSell) / oldSell * 100;
+  final up = newSell > oldSell;
+  final pct = (newSell - oldSell).abs() / oldSell * 100;
   const details = NotificationDetails(
     android: AndroidNotificationDetails(
-      'gold_drop',
-      'Giá vàng giảm',
-      channelDescription: 'Báo khi giá bán vàng miếng SJC giảm',
+      'gold_change',
+      'Giá vàng biến động',
+      channelDescription: 'Báo khi giá bán vàng miếng SJC tăng hoặc giảm',
       importance: Importance.high,
       priority: Priority.high,
     ),
   );
   await _fln.show(
     1001,
-    'Vàng SJC giảm ${pct.toStringAsFixed(2)}%',
+    'Vàng SJC ${up ? 'tăng' : 'giảm'} ${pct.toStringAsFixed(2)}%',
     'Giá bán ${_fmt(newSell)} đ/lượng (trước ${_fmt(oldSell)})',
     details,
   );
@@ -81,13 +83,17 @@ Future<void> setLastSjcSell(double? sell) async {
   await p.setDouble(_kPrefLastSell, sell);
 }
 
-/// So sanh voi lan truoc; neu giam >= nguong -> thong bao. Sau do luu moc moi.
-Future<void> checkSjcDrop(double? sell) async {
+/// So sanh voi lan truoc; neu bien dong >= nguong (tang/giam) -> thong bao.
+/// Sau do luu moc moi.
+Future<void> checkSjcChange(double? sell) async {
   if (sell == null || sell <= 0) return;
   final p = await SharedPreferences.getInstance();
   final last = p.getDouble(_kPrefLastSell);
-  if (last != null && last > 0 && sell <= last * (1 - kDropThreshold)) {
-    await _showDrop(last, sell);
+  if (last != null &&
+      last > 0 &&
+      (sell <= last * (1 - kChangeThreshold) ||
+          sell >= last * (1 + kChangeThreshold))) {
+    await _showChange(last, sell);
   }
   await p.setDouble(_kPrefLastSell, sell);
 }
@@ -99,7 +105,7 @@ void callbackDispatcher() {
     DartPluginRegistrant.ensureInitialized();
     final c = http.Client();
     try {
-      await checkSjcDrop(await fetchSjcMiengSell(c));
+      await checkSjcChange(await fetchSjcMiengSell(c));
     } catch (_) {
     } finally {
       c.close();
