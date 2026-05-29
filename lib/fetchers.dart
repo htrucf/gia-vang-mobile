@@ -171,7 +171,8 @@ Future<GoldBlock> fetchBtmh(http.Client c) async {
   // Quet cap span: ten san pham (font-body) roi 2 gia ke tiep [ban ra, mua vao].
   final r = await c.get(
     Uri.parse('https://baotinmanhhai.vn/vi/bang-gia-vang'),
-    headers: _baseHeaders,
+    // 'identity' -> ep server tra HTML khong nen (dart:io khong giai duoc brotli).
+    headers: {..._baseHeaders, 'Accept-Encoding': 'identity'},
   );
   if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
   final html = utf8.decode(r.bodyBytes);

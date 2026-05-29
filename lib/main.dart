@@ -93,7 +93,8 @@ class BrandQuote {
   final double? buy;
   final double? sell;
   final bool ok;
-  const BrandQuote(this.brand, {this.buy, this.sell, this.ok = true});
+  final String? msg; // thong bao loi (khi !ok) de chan doan tren may that
+  const BrandQuote(this.brand, {this.buy, this.sell, this.ok = true, this.msg});
 }
 
 /// Gom 1 san pham (miENG SJC / nhan tron) tu tat ca nguon -> 1 dong moi thuong hieu.
@@ -102,7 +103,8 @@ List<BrandQuote> _category(
   final out = <BrandQuote>[];
   for (final b in blocks) {
     if (!b.ok) {
-      out.add(BrandQuote(b.source, ok: false));
+      out.add(BrandQuote(b.source,
+          ok: false, msg: b.error?.replaceFirst('Exception: ', '')));
       continue;
     }
     for (final it in b.items) {
@@ -465,7 +467,7 @@ class _GoldSection extends StatelessWidget {
               for (final q in quotes)
                 _BrandRow(
                   brand: q.brand,
-                  buy: q.ok ? groupVnd(q.buy) : 'nguồn lỗi',
+                  buy: q.ok ? groupVnd(q.buy) : (q.msg ?? 'nguồn lỗi'),
                   sell: q.ok ? groupVnd(q.sell) : '',
                   error: !q.ok,
                 ),
@@ -520,12 +522,23 @@ class _BrandRow extends StatelessWidget {
               ],
             ),
           ),
-          Expanded(
-              flex: 3,
-              child: Text(buy, textAlign: TextAlign.right, style: base)),
-          Expanded(
-              flex: 3,
-              child: Text(sell, textAlign: TextAlign.right, style: base)),
+          if (error)
+            Expanded(
+              flex: 6,
+              child: Text(buy,
+                  textAlign: TextAlign.right,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: base),
+            )
+          else ...[
+            Expanded(
+                flex: 3,
+                child: Text(buy, textAlign: TextAlign.right, style: base)),
+            Expanded(
+                flex: 3,
+                child: Text(sell, textAlign: TextAlign.right, style: base)),
+          ],
         ],
       ),
     );
