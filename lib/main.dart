@@ -9,6 +9,7 @@ import 'store.dart';
 
 const Duration kRefreshEvery = Duration(minutes: 20);
 
+// Mau cham theo thuong hieu (bang gia hien tai).
 const Map<String, Color> kSourceColors = {
   'SJC': Color(0xFFF5B301),
   'PNJ': Color(0xFF58A6FF),
@@ -16,7 +17,14 @@ const Map<String, Color> kSourceColors = {
   'BTMC': Color(0xFF3FB950),
 };
 
+// Mau 2 duong tren bieu do (khop ten voi kGoldTypeCode).
+const Map<String, Color> kGoldLineColors = {
+  'Vàng miếng SJC': Color(0xFFF5B301),
+  'Nhẫn trơn 9999': Color(0xFF58A6FF),
+};
+
 const Color kPanel = Color(0xFF161B22);
+const Color kBg = Color(0xFF0D1117);
 final RoundedRectangleBorder kCardShape = RoundedRectangleBorder(
   borderRadius: BorderRadius.circular(14),
   side: const BorderSide(color: Color(0xFF21262D)),
@@ -33,9 +41,7 @@ class GiaVangApp extends StatelessWidget {
     return MaterialApp(
       title: 'Giá vàng & USD',
       debugShowCheckedModeBanner: false,
-      theme: base.copyWith(
-        scaffoldBackgroundColor: const Color(0xFF0D1117),
-      ),
+      theme: base.copyWith(scaffoldBackgroundColor: kBg),
       home: const HomePage(),
     );
   }
@@ -54,11 +60,58 @@ String groupVnd(num? v) {
 }
 
 String prettyTime(String iso) {
-  // iso: 2026-05-29T01:23:45+07:00 -> "01:23 29/05"
   if (iso.length < 16) return iso;
-  final date = iso.substring(0, 10).split('-'); // [y,m,d]
+  final date = iso.substring(0, 10).split('-');
   final hm = iso.substring(11, 16);
   return '$hm ${date[2]}/${date[1]}';
+}
+
+// ── Loc san pham vang ────────────────────────────────────────────────────────
+
+bool _isMiengSjc(String n, String src) {
+  if (n.contains('miếng sjc')) return true;
+  if (n.contains('sjc') &&
+      (n.contains('1l') || n.contains('10l') || n.contains('1kg'))) {
+    return true;
+  }
+  if (src == 'DOJI' && n.contains('hn lẻ')) return true; // DOJI niem yet mieng SJC
+  return false;
+}
+
+bool _isNhanTron(String n, String src) {
+  if (!n.contains('nhẫn')) return false;
+  return n.contains('trơn') ||
+      n.contains('99,99') ||
+      n.contains('999.9') ||
+      n.contains('99.99') ||
+      n.contains('9999');
+}
+
+class BrandQuote {
+  final String brand;
+  final double? buy;
+  final double? sell;
+  final bool ok;
+  const BrandQuote(this.brand, {this.buy, this.sell, this.ok = true});
+}
+
+/// Gom 1 san pham (miENG SJC / nhan tron) tu tat ca nguon -> 1 dong moi thuong hieu.
+List<BrandQuote> _category(
+    List<GoldBlock> blocks, bool Function(String name, String src) match) {
+  final out = <BrandQuote>[];
+  for (final b in blocks) {
+    if (!b.ok) {
+      out.add(BrandQuote(b.source, ok: false));
+      continue;
+    }
+    for (final it in b.items) {
+      if (match(it.name.toLowerCase(), b.source)) {
+        out.add(BrandQuote(b.source, buy: it.buy, sell: it.sell));
+        break;
+      }
+    }
+  }
+  return out;
 }
 
 class HomePage extends StatefulWidget {
@@ -123,7 +176,7 @@ class _HomePageState extends State<HomePage> {
     try {
       _chartCache[_range] = await fetchChartData(_range);
     } catch (_) {
-      // bieu do loi khong chan phan gia hien tai
+      // loi bieu do khong chan gia hien tai
     } finally {
       if (mounted) setState(() => _chartLoading = false);
     }
@@ -135,73 +188,127 @@ class _HomePageState extends State<HomePage> {
     _loadCharts();
   }
 
+  bool get _chartBusy => _chartLoading && !_chartCache.containsKey(_range);
+
   @override
   Widget build(BuildContext context) {
     final latest = _store.latest;
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0D1117),
-        title: const Text('Giá vàng & USD',
-            style: TextStyle(fontWeight: FontWeight.w700)),
-        actions: [
-          IconButton(
-            onPressed: _refreshing ? null : _refresh,
-            icon: _refreshing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh),
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: kBg,
+          title: const Text('Giá vàng & USD',
+              style: TextStyle(fontWeight: FontWeight.w700)),
+          actions: [
+            IconButton(
+              onPressed: _refreshing ? null : _refresh,
+              icon: _refreshing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
+            ),
+          ],
+          bottom: const TabBar(
+            indicatorColor: Color(0xFF1F6FEB),
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.grey,
+            labelStyle: TextStyle(fontWeight: FontWeight.w700),
+            tabs: [
+              Tab(text: 'Giá vàng'),
+              Tab(text: 'USD'),
+            ],
           ),
-        ],
-      ),
-      body: _booting
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _refresh,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+        ),
+        body: _booting
+            ? const Center(child: CircularProgressIndicator())
+            : TabBarView(
                 children: [
-                  if (_error != null) _ErrorBanner(_error!),
-                  if (latest == null && _error == null)
-                    const Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Center(child: Text('Đang tải dữ liệu…')),
-                    ),
-                  if (latest != null) ...[
-                    _HeaderLine(latest),
-                    const SizedBox(height: 8),
-                    _UsdCard(latest.usd),
-                    const SizedBox(height: 12),
-                    for (final g in latest.gold) ...[
-                      _GoldCard(g),
-                      const SizedBox(height: 12),
-                    ],
-                    _RangeSelector(range: _range, onChanged: _selectRange),
-                    const SizedBox(height: 12),
-                    _ChartCard(
-                      title: 'Vàng theo thời gian (triệu đ/lượng)',
-                      child: _chartLoading && !_chartCache.containsKey(_range)
-                          ? const _ChartLoading()
-                          : _GoldChart(
-                              _chartCache[_range]?.gold ?? const {},
-                              note: _range == ChartRange.year
-                                  ? 'Vàng: nguồn miễn phí chỉ có 30 ngày gần nhất'
-                                  : null,
-                            ),
-                    ),
-                    const SizedBox(height: 12),
-                    _ChartCard(
-                      title: 'USD/VND theo thời gian',
-                      child: _chartLoading && !_chartCache.containsKey(_range)
-                          ? const _ChartLoading()
-                          : _UsdChart(_chartCache[_range]?.usd ?? const []),
-                    ),
-                  ],
+                  _goldTab(latest),
+                  _usdTab(latest),
                 ],
               ),
+      ),
+    );
+  }
+
+  Widget _goldTab(Snapshot? latest) {
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+        children: [
+          if (_error != null) _ErrorBanner(_error!),
+          if (latest == null)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(child: Text('Đang tải dữ liệu…')),
+            )
+          else ...[
+            _HeaderLine(latest),
+            const SizedBox(height: 12),
+            _RangeSelector(range: _range, onChanged: _selectRange),
+            const SizedBox(height: 12),
+            _ChartCard(
+              title: 'Giá vàng theo thời gian (triệu đ/lượng)',
+              child: _chartBusy
+                  ? const _ChartLoading()
+                  : _GoldChart(
+                      _chartCache[_range]?.gold ?? const {},
+                      note: _range == ChartRange.year
+                          ? 'Vàng: nguồn miễn phí chỉ có 30 ngày gần nhất'
+                          : null,
+                    ),
             ),
+            const SizedBox(height: 12),
+            _GoldSection(
+              title: 'Vàng miếng SJC',
+              accent: const Color(0xFFF5B301),
+              quotes: _category(latest.gold, _isMiengSjc),
+            ),
+            const SizedBox(height: 12),
+            _GoldSection(
+              title: 'Nhẫn trơn 9999',
+              accent: const Color(0xFF58A6FF),
+              quotes: _category(latest.gold, _isNhanTron),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _usdTab(Snapshot? latest) {
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+        children: [
+          if (_error != null) _ErrorBanner(_error!),
+          if (latest == null)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(child: Text('Đang tải dữ liệu…')),
+            )
+          else ...[
+            _HeaderLine(latest),
+            const SizedBox(height: 8),
+            _UsdCard(latest.usd),
+            const SizedBox(height: 12),
+            _RangeSelector(range: _range, onChanged: _selectRange),
+            const SizedBox(height: 12),
+            _ChartCard(
+              title: 'USD/VND theo thời gian',
+              child: _chartBusy
+                  ? const _ChartLoading()
+                  : _UsdChart(_chartCache[_range]?.usd ?? const []),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -311,111 +418,113 @@ class _UsdCard extends StatelessWidget {
   }
 }
 
-class _GoldCard extends StatelessWidget {
-  final GoldBlock g;
-  const _GoldCard(this.g);
+class _GoldSection extends StatelessWidget {
+  final String title;
+  final Color accent;
+  final List<BrandQuote> quotes;
+  const _GoldSection(
+      {required this.title, required this.accent, required this.quotes});
 
   @override
   Widget build(BuildContext context) {
-    final color = kSourceColors[g.source] ?? Colors.white;
     return Card(
       elevation: 0,
       color: kPanel,
       shape: kCardShape,
-      clipBehavior: Clip.antiAlias,
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: g.source == 'SJC',
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-          title: Row(
-            children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration:
-                    BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 8),
-              Text(g.source,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 16)),
-              const Spacer(),
-              chgBadge(g.changePct),
-            ],
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 4, left: 18),
-            child: g.ok
-                ? Text(
-                    g.representative != null
-                        ? 'Bán: ${groupVnd(g.representative)} đ/lượng'
-                        : '${g.items.length} dòng',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  )
-                : Text('Lỗi: ${g.error ?? ''}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 12, color: Color(0xFFF85149))),
-          ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (g.ok && g.items.isNotEmpty) _goldTable(g),
+            Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration:
+                      BoxDecoration(color: accent, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 8),
+                Text(title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 16)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const _BrandRow(
+                brand: 'Thương hiệu', buy: 'Mua', sell: 'Bán', header: true),
+            const Divider(height: 10, color: Color(0xFF21262D)),
+            if (quotes.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 6),
+                child: Text('Không có dữ liệu',
+                    style: TextStyle(color: Colors.grey, fontSize: 12.5)),
+              )
+            else
+              for (final q in quotes)
+                _BrandRow(
+                  brand: q.brand,
+                  buy: q.ok ? groupVnd(q.buy) : 'nguồn lỗi',
+                  sell: q.ok ? groupVnd(q.sell) : '',
+                  error: !q.ok,
+                ),
           ],
         ),
       ),
     );
   }
-
-  Widget _goldTable(GoldBlock g) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Column(
-        children: [
-          const _GoldRow(name: 'Loại', buy: 'Mua', sell: 'Bán', header: true),
-          const Divider(height: 8, color: Color(0xFF21262D)),
-          for (final it in g.items)
-            _GoldRow(
-              name: it.name.isEmpty ? '—' : it.name,
-              buy: groupVnd(it.buy),
-              sell: groupVnd(it.sell),
-            ),
-        ],
-      ),
-    );
-  }
 }
 
-class _GoldRow extends StatelessWidget {
-  final String name;
+class _BrandRow extends StatelessWidget {
+  final String brand;
   final String buy;
   final String sell;
   final bool header;
-  const _GoldRow({
-    required this.name,
+  final bool error;
+  const _BrandRow({
+    required this.brand,
     required this.buy,
     required this.sell,
     this.header = false,
+    this.error = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final style = TextStyle(
-      fontSize: 12.5,
-      color: header ? Colors.grey : Colors.white,
-      fontWeight: header ? FontWeight.w700 : FontWeight.w400,
+    final base = TextStyle(
+      fontSize: 13,
+      color: header
+          ? Colors.grey
+          : (error ? const Color(0xFFF85149) : Colors.white),
+      fontWeight: header ? FontWeight.w700 : FontWeight.w500,
     );
+    final dot = kSourceColors[brand];
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         children: [
-          Expanded(flex: 4, child: Text(name, style: style)),
+          Expanded(
+            flex: 4,
+            child: Row(
+              children: [
+                if (!header && dot != null) ...[
+                  Container(
+                      width: 8,
+                      height: 8,
+                      decoration:
+                          BoxDecoration(color: dot, shape: BoxShape.circle)),
+                  const SizedBox(width: 7),
+                ],
+                Flexible(child: Text(brand, style: base)),
+              ],
+            ),
+          ),
           Expanded(
               flex: 3,
-              child: Text(buy, textAlign: TextAlign.right, style: style)),
+              child: Text(buy, textAlign: TextAlign.right, style: base)),
           Expanded(
               flex: 3,
-              child: Text(sell, textAlign: TextAlign.right, style: style)),
+              child: Text(sell, textAlign: TextAlign.right, style: base)),
         ],
       ),
     );
@@ -444,7 +553,7 @@ class _ChartCard extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                     color: Colors.grey)),
             const SizedBox(height: 16),
-            SizedBox(height: 210, child: child),
+            SizedBox(height: 220, child: child),
           ],
         ),
       ),
@@ -499,6 +608,27 @@ FlGridData get _grid => FlGridData(
       drawVerticalLine: false,
       getDrawingHorizontalLine: (_) =>
           const FlLine(color: Color(0xFF21262D), strokeWidth: 1),
+    );
+
+// Tooltip khi cham vao bieu do: hien ngay + gia.
+LineTouchData _touch({required bool millions}) => LineTouchData(
+      enabled: true,
+      touchTooltipData: LineTouchTooltipData(
+        getTooltipColor: (_) => const Color(0xFF010409),
+        getTooltipItems: (spots) => List.generate(spots.length, (i) {
+          final s = spots[i];
+          final dt = DateTime.fromMillisecondsSinceEpoch(s.x.toInt());
+          final val = millions ? '${s.y.toStringAsFixed(2)} tr' : groupVnd(s.y);
+          final head = i == 0 ? '${_dm(dt)}  ' : '';
+          return LineTooltipItem(
+            '$head$val',
+            TextStyle(
+                color: s.bar.color ?? Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700),
+          );
+        }),
+      ),
     );
 
 class _EmptyChart extends StatelessWidget {
@@ -586,11 +716,12 @@ class _GoldChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bars = <LineChartBarData>[];
+    final present = <String, Color>{};
     final allY = <double>[];
     double? minX, maxX;
     DateTime? minT, maxT;
-    kSourceColors.forEach((source, color) {
-      final series = gold[source] ?? const [];
+    kGoldLineColors.forEach((label, color) {
+      final series = gold[label] ?? const [];
       if (series.length < 2) return;
       final spots = <FlSpot>[];
       for (final p in series) {
@@ -604,6 +735,7 @@ class _GoldChart extends StatelessWidget {
         if (maxT == null || p.t.isAfter(maxT!)) maxT = p.t;
       }
       bars.add(_bar(spots, color));
+      present[label] = color;
     });
     if (bars.isEmpty) return const _EmptyChart();
     final r = _yRange(allY);
@@ -619,7 +751,7 @@ class _GoldChart extends StatelessWidget {
             titlesData: _titles((v) => v.toStringAsFixed(1)),
             gridData: _grid,
             borderData: FlBorderData(show: false),
-            lineTouchData: LineTouchData(enabled: false),
+            lineTouchData: _touch(millions: true),
           )),
         ),
         const SizedBox(height: 6),
@@ -627,8 +759,9 @@ class _GoldChart extends StatelessWidget {
         const SizedBox(height: 6),
         Wrap(
           spacing: 14,
+          runSpacing: 4,
           children: [
-            for (final e in kSourceColors.entries) _legendDot(e.key, e.value),
+            for (final e in present.entries) _legendDot(e.key, e.value),
           ],
         ),
         if (note != null)
@@ -681,7 +814,7 @@ class _UsdChart extends StatelessWidget {
             titlesData: _titles((v) => v.toStringAsFixed(0)),
             gridData: _grid,
             borderData: FlBorderData(show: false),
-            lineTouchData: LineTouchData(enabled: false),
+            lineTouchData: _touch(millions: false),
           )),
         ),
         const SizedBox(height: 6),

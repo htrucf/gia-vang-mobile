@@ -22,12 +22,12 @@ class SeriesPoint {
   const SeriesPoint(this.t, this.v);
 }
 
-// Map nguon vang -> ma type cua vang.today (BTMC = Bao Tin Minh Chau).
+// San pham -> ma type cua vang.today.
+//   SJL1L10  = "SJC 9999"  (vang mieng SJC)
+//   PQHN24NTT= "PNJ 24K"   (nhan tron 9999, dai dien)
 const Map<String, String> kGoldTypeCode = {
-  'SJC': 'SJL1L10',
-  'PNJ': 'PQHN24NTT',
-  'DOJI': 'DOHNL',
-  'BTMC': 'BT9999NTT',
+  'Vàng miếng SJC': 'SJL1L10',
+  'Nhẫn trơn 9999': 'PQHN24NTT',
 };
 
 const Map<String, String> _ua = {
@@ -78,13 +78,13 @@ int goldMaxDays = 30; // gioi han cua nguon free
 int _goldDays(ChartRange r) => r == ChartRange.week ? 7 : goldMaxDays;
 
 Future<List<SeriesPoint>> fetchGoldSeries(
-    http.Client c, String source, ChartRange r) async {
-  final code = kGoldTypeCode[source];
+    http.Client c, String typeKey, ChartRange r) async {
+  final code = kGoldTypeCode[typeKey];
   if (code == null) return const [];
   final url = 'https://www.vang.today/api/prices?type=$code&days=${_goldDays(r)}';
   final resp = await c.get(Uri.parse(url),
       headers: {..._ua, 'Accept': 'application/json'});
-  if (resp.statusCode != 200) throw Exception('$source HTTP ${resp.statusCode}');
+  if (resp.statusCode != 200) throw Exception('$typeKey HTTP ${resp.statusCode}');
   final j = jsonDecode(resp.body) as Map<String, dynamic>;
   final hist = (j['history'] as List?) ?? const [];
   final out = <SeriesPoint>[];
@@ -108,7 +108,7 @@ Future<List<SeriesPoint>> fetchGoldSeries(
 /// Tat ca du lieu bieu do cho 1 khoang thoi gian.
 class ChartData {
   final List<SeriesPoint> usd;
-  final Map<String, List<SeriesPoint>> gold; // source -> series
+  final Map<String, List<SeriesPoint>> gold; // san pham -> series
   const ChartData({required this.usd, required this.gold});
 }
 
