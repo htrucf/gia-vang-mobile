@@ -1,6 +1,8 @@
 // Thong bao chay nen khi gia ban vang mieng SJC bien dong >= 1% so voi lan truoc
 // (ca tang lan giam). foreground chi cap nhat moc (setLastSjcSell); task chay nen
 // so sanh + bao.
+import 'dart:ui' show DartPluginRegistrant;
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
@@ -21,7 +23,7 @@ Future<void> _ensureFln() async {
   const init = InitializationSettings(
     android: AndroidInitializationSettings('@mipmap/ic_launcher'),
   );
-  await _fln.initialize(init);
+  await _fln.initialize(settings: init);
   _flnReady = true;
 }
 
@@ -69,10 +71,10 @@ Future<void> _showChange(double oldSell, double newSell) async {
     ),
   );
   await _fln.show(
-    1001,
-    'Vàng SJC ${up ? 'tăng' : 'giảm'} ${pct.toStringAsFixed(2)}%',
-    'Giá bán ${_fmt(newSell)} đ/lượng (trước ${_fmt(oldSell)})',
-    details,
+    id: 1001,
+    title: 'Vàng SJC ${up ? 'tăng' : 'giảm'} ${pct.toStringAsFixed(2)}%',
+    body: 'Giá bán ${_fmt(newSell)} đ/lượng (trước ${_fmt(oldSell)})',
+    notificationDetails: details,
   );
 }
 
