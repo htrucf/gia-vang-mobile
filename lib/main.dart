@@ -40,7 +40,7 @@ class GiaVangApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final base = ThemeData.dark(useMaterial3: true);
     return MaterialApp(
-      title: 'Giá vàng & USD',
+      title: 'Gold USD',
       debugShowCheckedModeBanner: false,
       theme: base.copyWith(scaffoldBackgroundColor: kBg),
       home: const HomePage(),
@@ -204,7 +204,7 @@ class _HomePageState extends State<HomePage> {
       child: Scaffold(
         appBar: AppBar(
           backgroundColor: kBg,
-          title: const Text('Giá vàng & USD',
+          title: const Text('Gold USD',
               style: TextStyle(fontWeight: FontWeight.w700)),
           actions: [
             IconButton(

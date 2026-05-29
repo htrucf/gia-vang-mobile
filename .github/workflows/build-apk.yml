@@ -39,11 +39,16 @@ jobs:
             sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' "$M"
           grep -q 'usesCleartextTraffic' "$M" || \
             sed -i 's#<application#<application\n        android:usesCleartextTraffic="true"#' "$M"
+          sed -i 's#android:label="[^"]*"#android:label="Gold USD"#' "$M"
           echo "===== AndroidManifest.xml ====="
           cat "$M"
 
       - name: Get dependencies
         run: flutter pub get
+
+      # Sinh icon launcher tu assets/icon/icon.png (sau flutter create -> android/ da co).
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
 
       - name: Build release APK
         run: flutter build apk --release
